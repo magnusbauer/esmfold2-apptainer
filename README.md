@@ -40,25 +40,32 @@ The same override can be set with `ESMFOLD2_MODEL_PATH` and
 
 `esmfold2_predict` accepts AlphaFold3 JSON, PDB, mmCIF, or a folder of those
 files. Use AlphaFold3 JSON when ligands, DNA, RNA, residue modifications, seeds,
-or covalent bonds must be represented exactly.
+or covalent bonds must be represented exactly. Use `--output-dir` when you want
+AF3-style output folders.
 
 The model defaults in the CLI match the installed ESMFold2 builder defaults:
 `--num-loops 3`, `--num-sampling-steps 200`, `--num-diffusion-samples 1`, and
 AF3 `modelSeeds` are used unless `--seed` is supplied.
 
 Each prediction writes AF3-style basic confidence sidecars next to the CIF:
-`*_summary_confidences.json` and `*_confidences.json`. `--metrics-json` writes a
-small aggregate JSON index. `--full-metrics` writes heavy tensors to
-`*_full_metrics.pkl` instead of embedding them in JSON.
+`*_summary_confidences.json` and `*_confidences.json`. With `--output-dir`, the
+runner writes one AF3-style job folder per input, with `seed-*_sample-*`
+subfolders and top-level selected `*_model.cif`, `*_summary_confidences.json`,
+and `*_confidences.json` files. The selected top-level files are hard links to
+the best seed/sample when the filesystem supports hard links, so the AF3 shape
+does not duplicate file contents. `--metrics-json` writes a small aggregate JSON
+index. `--full-metrics` writes heavy tensors to `*_full_metrics.pkl` instead of
+embedding them in JSON; in AF3-style output folders, the top-level selected
+pickle is a hard link to the best seed/sample pickle.
 
 ## AlphaFold3 JSON
 
-Run the Hugging Face HhaI/1MHT guide complex:
+Run the Hugging Face HhaI/1MHT guide complex with AF3-style output:
 
 ```bash
 apptainer exec --nv esmfold2.sif esmfold2_predict \
   --input examples/af3_inputs/hf_hhai_1mht.json \
-  --output examples/run_outputs/hf_hhai_1mht_full_metrics/1mht_pred.cif \
+  --output-dir examples/run_outputs/hf_hhai_1mht_full_metrics \
   --metrics-json examples/run_outputs/hf_hhai_1mht_full_metrics/metrics.json \
   --full-metrics
 ```
@@ -86,8 +93,8 @@ apptainer exec --nv esmfold2.sif esmfold2_predict \
 
 ## Batch
 
-Batch mode scans `.json`, `.pdb`, `.cif`, and `.mmcif` files and loads the model
-once for all jobs:
+Batch mode scans `.json`, `.pdb`, `.cif`, and `.mmcif` files, loads the model
+once for all jobs, and writes one AF3-style folder per input:
 
 ```bash
 apptainer exec --nv esmfold2.sif esmfold2_predict \
@@ -98,6 +105,20 @@ apptainer exec --nv esmfold2.sif esmfold2_predict \
 
 Use `--recursive` to scan nested folders and `--list-inputs` to inspect jobs
 without loading the model.
+
+For an input named `my_complex.json`, the batch layout is:
+
+```text
+outputs/my_complex/
+  my_complex_model.cif
+  my_complex_summary_confidences.json
+  my_complex_confidences.json
+  my_complex_ranking_scores.csv
+  seed-0_sample-0/
+    my_complex_seed-0_sample-0_model.cif
+    my_complex_seed-0_sample-0_summary_confidences.json
+    my_complex_seed-0_sample-0_confidences.json
+```
 
 ## GPU Architecture Tests
 

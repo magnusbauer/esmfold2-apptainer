@@ -14,7 +14,7 @@ apptainer exec --nv esmfold2.sif esmfold2_predict \
   --model /net/scratch/magnusb/git/ESMFold2/models/ESMFold2 \
   --ccd-cache /net/scratch/magnusb/git/ESMFold2/models/ESMFold2 \
   --input examples/af3_inputs/hf_hhai_1mht.json \
-  --output examples/run_outputs/hf_hhai_1mht_full_metrics/1mht_pred.cif \
+  --output-dir examples/run_outputs/hf_hhai_1mht_full_metrics \
   --metrics-json examples/run_outputs/hf_hhai_1mht_full_metrics/metrics.json \
   --full-metrics
 ```
@@ -54,8 +54,8 @@ apptainer exec esmfold2.sif esmfold2_predict \
 
 ## Batch
 
-Batch mode scans `.json`, `.pdb`, `.cif`, and `.mmcif` files and loads the model
-once.
+Batch mode scans `.json`, `.pdb`, `.cif`, and `.mmcif` files, loads the model
+once, and writes one AF3-style folder per input.
 
 ```bash
 apptainer exec --nv esmfold2.sif esmfold2_predict \
@@ -66,6 +66,24 @@ apptainer exec --nv esmfold2.sif esmfold2_predict \
 
 Add `--recursive` for nested folders. Add `--list-inputs` to inspect the batch
 without loading the model.
+
+An input named `my_complex.json` produces:
+
+```text
+batch_af3/my_complex/
+  my_complex_model.cif
+  my_complex_summary_confidences.json
+  my_complex_confidences.json
+  my_complex_ranking_scores.csv
+  seed-0_sample-0/
+    my_complex_seed-0_sample-0_model.cif
+    my_complex_seed-0_sample-0_summary_confidences.json
+    my_complex_seed-0_sample-0_confidences.json
+```
+
+The top-level selected model and confidence files follow AF3 naming. They are
+hard links to the best-ranked seed/sample files when the filesystem supports
+hard links, so the layout does not store duplicate file contents.
 
 Without extra flags the runner uses the installed ESMFold2 builder defaults:
 `num_loops=3`, `num_sampling_steps=200`, and `num_diffusion_samples=1`.
@@ -80,12 +98,14 @@ Add `--include-plddt` to include per-residue pLDDT values.
 
 Every prediction writes AF3-style basic confidence sidecars next to the CIF:
 `*_summary_confidences.json` and `*_confidences.json`. `--metrics-json` writes a
-small aggregate JSON index.
+small aggregate JSON index. Use `--output-dir` to get AF3-style job folders with
+`seed-*_sample-*` subdirectories and a top-level selected model.
 
 Add `--full-metrics` to save every metric-like field exposed by the decoded
 ESMFold2 result to `*_full_metrics.pkl`, including pLDDT, PAE, distogram logits,
 pair-chain iPTM, residue indices, and entity ids when present. Full metrics are
-pickled so the JSON files stay small.
+pickled so the JSON files stay small. In AF3-style output folders, the top-level
+selected pickle is a hard link to the best seed/sample pickle.
 
 ## GPU Architecture Tests
 

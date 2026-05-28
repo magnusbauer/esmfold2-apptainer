@@ -287,6 +287,8 @@ def result_records_from_items(
     result: Any,
     *,
     output: str,
+    output_paths: list[str | Path] | None = None,
+    sidecar_paths: list[tuple[str | Path, str | Path, str | Path]] | None = None,
     chain_records: list[dict[str, Any]],
     complex_id: str,
     include_plddt: bool = False,
@@ -294,18 +296,36 @@ def result_records_from_items(
     metadata: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     results = result if isinstance(result, list) else [result]
-    output_path = Path(output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_paths is not None:
+        if len(output_paths) != len(results):
+            raise ValueError("output_paths length must match the number of prediction results")
+        paths = [Path(path) for path in output_paths]
+    else:
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        paths = [
+            output_path
+            if len(results) == 1
+            else output_path.with_name(f"{output_path.stem}.sample_{index + 1}{output_path.suffix}")
+            for index in range(len(results))
+        ]
+    if sidecar_paths is not None:
+        if len(sidecar_paths) != len(results):
+            raise ValueError("sidecar_paths length must match the number of prediction results")
+        sidecars = [
+            (Path(summary_path), Path(confidences_path), Path(full_metrics_path))
+            for summary_path, confidences_path, full_metrics_path in sidecar_paths
+        ]
+    else:
+        sidecars = [_sidecar_paths(path) for path in paths]
 
     records: list[dict[str, Any]] = []
     for index, item in enumerate(results):
-        if len(results) == 1:
-            path = output_path
-        else:
-            path = output_path.with_name(f"{output_path.stem}.sample_{index + 1}{output_path.suffix}")
+        path = paths[index]
+        path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as handle:
             handle.write(item.complex.to_mmcif())
-        summary_path, confidences_path, full_metrics_path = _sidecar_paths(path)
+        summary_path, confidences_path, full_metrics_path = sidecars[index]
         summary_confidences = summary_confidences_from_item(
             item,
             chain_records=chain_records,

@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import os
+import shutil
 from pathlib import Path
 
 from esm.models.esmfold2 import ESMFold2InputBuilder
@@ -31,7 +34,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        help="Output directory for --input-dir. Defaults to <input-dir>/esmfold2_outputs.",
+        help=(
+            "AF3-style output directory. For --input-dir, defaults to "
+            "<input-dir>/esmfold2_outputs. For --input, use this instead of "
+            "--output to write an AF3-style job folder."
+        ),
     )
     parser.add_argument("--recursive", action="store_true", help="Recursively scan --input-dir.")
     parser.add_argument(
@@ -74,8 +81,10 @@ def parse_args() -> argparse.Namespace:
         help="Override AF3 modelSeeds. Structure inputs default to seed 0.",
     )
     args = parser.parse_args()
-    if args.input and not args.list_inputs and args.output is None:
-        parser.error("--output is required with --input unless --list-inputs is used")
+    if args.input and args.output is not None and args.output_dir is not None:
+        parser.error("--output and --output-dir are mutually exclusive with --input")
+    if args.input and not args.list_inputs and args.output is None and args.output_dir is None:
+        parser.error("--output or --output-dir is required with --input unless --list-inputs is used")
     if args.input_dir and args.output is not None:
         parser.error("--output is only valid with --input; use --output-dir for batch runs")
     return args
@@ -83,7 +92,7 @@ def parse_args() -> argparse.Namespace:
 
 def load_jobs(args: argparse.Namespace) -> tuple[list[PreparedJob], Path | None]:
     if args.input:
-        return [read_input_job(args.input, input_format=args.format)], None
+        return [read_input_job(args.input, input_format=args.format)], args.output_dir
 
     output_dir = args.output_dir or args.input_dir / "esmfold2_outputs"
     paths = discover_input_paths(args.input_dir, output_dir, recursive=args.recursive)
@@ -124,13 +133,101 @@ def base_output_for_job(job: PreparedJob, args: argparse.Namespace, output_dir: 
         return args.output
     if output_dir is None:
         raise ValueError(f"No output directory for {job.job_id}")
-    return output_dir / f"{job.job_id}.cif"
+    return af3_job_dir(job, output_dir) / f"{job.job_id}_model.cif"
 
 
 def output_for_seed(base_output: Path, seed: int, seed_count: int) -> Path:
     if seed_count == 1:
         return base_output
     return base_output.with_name(f"{base_output.stem}.seed_{seed}{base_output.suffix}")
+
+
+def af3_job_dir(job: PreparedJob, output_dir: Path) -> Path:
+    return output_dir / job.job_id
+
+
+def af3_sample_model_path(job_dir: Path, job_id: str, seed: int, sample_index: int) -> Path:
+    sample_name = f"seed-{seed}_sample-{sample_index}"
+    return job_dir / sample_name / f"{job_id}_{sample_name}_model.cif"
+
+
+def af3_sample_sidecar_paths(job_dir: Path, job_id: str, seed: int, sample_index: int) -> tuple[Path, Path, Path]:
+    sample_name = f"seed-{seed}_sample-{sample_index}"
+    sample_dir = job_dir / sample_name
+    base = f"{job_id}_{sample_name}"
+    return (
+        sample_dir / f"{base}_summary_confidences.json",
+        sample_dir / f"{base}_confidences.json",
+        sample_dir / f"{base}_full_metrics.pkl",
+    )
+
+
+def af3_selected_paths(job_dir: Path, job_id: str) -> tuple[Path, Path, Path]:
+    return (
+        job_dir / f"{job_id}_model.cif",
+        job_dir / f"{job_id}_summary_confidences.json",
+        job_dir / f"{job_id}_confidences.json",
+    )
+
+
+def replace_with_hardlink_or_copy(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() or target.is_symlink():
+        target.unlink()
+    try:
+        os.link(source, target)
+    except OSError:
+        shutil.copy2(source, target)
+
+
+def record_ranking_score(record: dict) -> float | None:
+    metrics = record.get("metrics") or {}
+    score = metrics.get("ranking_score")
+    return float(score) if score is not None else None
+
+
+def best_record(records: list[dict]) -> dict:
+    if not records:
+        raise ValueError("Cannot select a best prediction from an empty record list")
+
+    def ranking_key(record: dict) -> tuple[bool, float]:
+        score = record_ranking_score(record)
+        return score is not None, score if score is not None else float("-inf")
+
+    return max(records, key=ranking_key)
+
+
+def write_ranking_scores(path: Path, records: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["seed", "sample", "ranking_score"])
+        writer.writeheader()
+        for record in records:
+            writer.writerow(
+                {
+                    "seed": record.get("seed"),
+                    "sample": record.get("sample"),
+                    "ranking_score": record_ranking_score(record),
+                }
+            )
+
+
+def finalize_af3_layout(job: PreparedJob, job_dir: Path, records: list[dict]) -> None:
+    selected = best_record(records)
+    selected_model, selected_summary, selected_confidences = af3_selected_paths(job_dir, job.job_id)
+    replace_with_hardlink_or_copy(Path(selected["output"]), selected_model)
+    replace_with_hardlink_or_copy(Path(selected["summary_confidences_json"]), selected_summary)
+    replace_with_hardlink_or_copy(Path(selected["confidences_json"]), selected_confidences)
+    if selected.get("full_metrics_pickle"):
+        selected_full_metrics = job_dir / f"{job.job_id}_full_metrics.pkl"
+        replace_with_hardlink_or_copy(Path(selected["full_metrics_pickle"]), selected_full_metrics)
+        selected["selected_full_metrics_pickle"] = str(selected_full_metrics)
+    write_ranking_scores(job_dir / f"{job.job_id}_ranking_scores.csv", records)
+    for record in records:
+        record["selected"] = record is selected
+    selected["selected_output"] = str(selected_model)
+    selected["selected_summary_confidences_json"] = str(selected_summary)
+    selected["selected_confidences_json"] = str(selected_confidences)
 
 
 def print_job(job: PreparedJob, seeds: list[int], output: Path | None) -> None:
@@ -171,8 +268,12 @@ def main() -> None:
     for job in finalized_jobs:
         base_output = base_output_for_job(job, args, output_dir)
         seeds = seeds_for_job(job, args.seed)
+        job_records = []
         for seed in seeds:
-            output = output_for_seed(base_output, seed, len(seeds))
+            if output_dir is not None and args.output is None:
+                output = base_output
+            else:
+                output = output_for_seed(base_output, seed, len(seeds))
             metadata = dict(job.metadata)
             metadata["job_id"] = job.job_id
             metadata["seed"] = seed
@@ -186,16 +287,37 @@ def main() -> None:
                 seed=seed,
                 complex_id=job.complex_id,
             )
+            output_paths = None
+            sidecar_paths = None
+            if output_dir is not None and args.output is None:
+                result_items = result if isinstance(result, list) else [result]
+                job_dir = af3_job_dir(job, output_dir)
+                output_paths = [
+                    af3_sample_model_path(job_dir, job.job_id, seed, sample_index)
+                    for sample_index in range(len(result_items))
+                ]
+                sidecar_paths = [
+                    af3_sample_sidecar_paths(job_dir, job.job_id, seed, sample_index)
+                    for sample_index in range(len(result_items))
+                ]
             records = result_records_from_items(
                 result,
                 output=str(output),
+                output_paths=output_paths,
+                sidecar_paths=sidecar_paths,
                 chain_records=job.chain_records,
                 complex_id=job.complex_id,
                 include_plddt=args.include_plddt,
                 full_metrics=args.full_metrics,
                 metadata=metadata,
             )
+            for sample_index, record in enumerate(records):
+                record["seed"] = seed
+                record["sample"] = sample_index
+            job_records.extend(records)
             all_records.extend(records)
+        if output_dir is not None and args.output is None:
+            finalize_af3_layout(job, af3_job_dir(job, output_dir), job_records)
 
     if args.metrics_json:
         write_metrics_json(args.metrics_json, all_records)

@@ -19,6 +19,18 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+# Local credentials and environment overrides
+.env
+.env.*
+.netrc
+.hf_token
+hf_token
+*.hf_token
+token
+stored_tokens
+credentials
+credentials.json
+
 # Local editor and OS noise
 .DS_Store
 *.swp
