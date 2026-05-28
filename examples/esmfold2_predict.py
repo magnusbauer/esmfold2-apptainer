@@ -151,21 +151,19 @@ def af3_sample_model_path(job_dir: Path, job_id: str, seed: int, sample_index: i
     return job_dir / sample_name / f"{job_id}_{sample_name}_model.cif"
 
 
-def af3_sample_sidecar_paths(job_dir: Path, job_id: str, seed: int, sample_index: int) -> tuple[Path, Path, Path]:
+def af3_sample_sidecar_paths(job_dir: Path, job_id: str, seed: int, sample_index: int) -> tuple[Path, Path]:
     sample_name = f"seed-{seed}_sample-{sample_index}"
     sample_dir = job_dir / sample_name
     base = f"{job_id}_{sample_name}"
     return (
-        sample_dir / f"{base}_summary_confidences.json",
         sample_dir / f"{base}_confidences.json",
         sample_dir / f"{base}_full_metrics.pkl",
     )
 
 
-def af3_selected_paths(job_dir: Path, job_id: str) -> tuple[Path, Path, Path]:
+def af3_selected_paths(job_dir: Path, job_id: str) -> tuple[Path, Path]:
     return (
         job_dir / f"{job_id}_model.cif",
-        job_dir / f"{job_id}_summary_confidences.json",
         job_dir / f"{job_id}_confidences.json",
     )
 
@@ -214,9 +212,8 @@ def write_ranking_scores(path: Path, records: list[dict]) -> None:
 
 def finalize_af3_layout(job: PreparedJob, job_dir: Path, records: list[dict]) -> None:
     selected = best_record(records)
-    selected_model, selected_summary, selected_confidences = af3_selected_paths(job_dir, job.job_id)
+    selected_model, selected_confidences = af3_selected_paths(job_dir, job.job_id)
     replace_with_hardlink_or_copy(Path(selected["output"]), selected_model)
-    replace_with_hardlink_or_copy(Path(selected["summary_confidences_json"]), selected_summary)
     replace_with_hardlink_or_copy(Path(selected["confidences_json"]), selected_confidences)
     if selected.get("full_metrics_pickle"):
         selected_full_metrics = job_dir / f"{job.job_id}_full_metrics.pkl"
@@ -226,7 +223,6 @@ def finalize_af3_layout(job: PreparedJob, job_dir: Path, records: list[dict]) ->
     for record in records:
         record["selected"] = record is selected
     selected["selected_output"] = str(selected_model)
-    selected["selected_summary_confidences_json"] = str(selected_summary)
     selected["selected_confidences_json"] = str(selected_confidences)
 
 

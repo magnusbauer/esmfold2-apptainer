@@ -48,11 +48,11 @@ Usage:
 
 Submits one Slurm job per GPU architecture case and leaves output folders under
 examples/gpu_test_outputs by default. Each successful run writes:
-  <case>_model.cif
-  <case>_summary_confidences.json
-  <case>_confidences.json
-  <case>_full_metrics.pkl
-  <case>_metrics.json
+  af3_outputs/<job_id>/<job_id>_model.cif
+  af3_outputs/<job_id>/<job_id>_confidences.json
+  af3_outputs/<job_id>/<job_id>_full_metrics.pkl
+  af3_outputs/<job_id>/<job_id>_ranking_scores.csv
+  metrics.json
   command.txt
   gpu_info.txt
 
@@ -135,8 +135,8 @@ run_case() {
   cmd+=(
     "${IMAGE}" esmfold2_predict
     --input "${INPUT}"
-    --output "${out_dir}/${case_name}_model.cif"
-    --metrics-json "${out_dir}/${case_name}_metrics.json"
+    --output-dir "${out_dir}/af3_outputs"
+    --metrics-json "${out_dir}/metrics.json"
     --full-metrics
     --seed "${SEED}"
   )

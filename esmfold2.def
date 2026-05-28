@@ -4,8 +4,11 @@ From: nvidia/cuda:12.8.1-devel-ubuntu24.04
 IncludeCmd: yes
 
 %labels
-    Author magnusb
-    Description "ESMFold2 local GPU runtime with pixi-managed Python 3.12"
+    Author magnusbauer
+    Description "Apptainer runtime packaging for Biohub ESMFold2 with pixi-managed Python 3.12"
+    UpstreamCode "https://github.com/Biohub/esm"
+    UpstreamESMFold2 "https://huggingface.co/biohub/ESMFold2"
+    UpstreamESMC6B "https://huggingface.co/biohub/ESMC-6B"
     ESMPackage "git+https://github.com/Biohub/esm.git@c94ed8d"
     PyTorch "2.9.1+cu128"
     xFormers "0.0.33.post2"
@@ -15,13 +18,13 @@ IncludeCmd: yes
     ESMC6BRevision "89c554c46a44d825fbfbe3ce2a6bdc539770bdaa"
 
 %files
-    /etc/localtime
+    README.md /opt/esmfold2/README.md
+    ATTRIBUTION.md /opt/esmfold2/ATTRIBUTION.md
     examples/_esmfold2_common.py /opt/esmfold2/examples/_esmfold2_common.py
     examples/_esmfold2_inputs.py /opt/esmfold2/examples/_esmfold2_inputs.py
     examples/esmfold2_predict.py /opt/esmfold2/examples/esmfold2_predict.py
     examples/predict_hf_hhai_1mht.py /opt/esmfold2/examples/predict_hf_hhai_1mht.py
     examples/run_gpu_arch_tests.sh /opt/esmfold2/examples/run_gpu_arch_tests.sh
-    examples/README.md /opt/esmfold2/examples/README.md
     examples/af3_inputs /opt/esmfold2/examples/af3_inputs
 
 %post
@@ -76,8 +79,8 @@ IncludeCmd: yes
 [workspace]
 name = "esmfold2"
 version = "0.1.0"
-description = "ESMFold2 runtime"
-authors = ["Biohub ESMFold2 container user"]
+description = "Apptainer runtime packaging for Biohub ESMFold2"
+authors = ["Biohub ESMFold2 authors (upstream); magnusbauer (container packaging)"]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 

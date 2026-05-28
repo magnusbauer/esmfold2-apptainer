@@ -124,10 +124,9 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
         handle.write("\n")
 
 
-def _sidecar_paths(model_path: Path) -> tuple[Path, Path, Path]:
+def _sidecar_paths(model_path: Path) -> tuple[Path, Path]:
     base = model_path.with_suffix("")
     return (
-        base.with_name(f"{base.name}_summary_confidences.json"),
         base.with_name(f"{base.name}_confidences.json"),
         base.with_name(f"{base.name}_full_metrics.pkl"),
     )
@@ -205,7 +204,7 @@ def _ranking_score(ptm: float | None, iptm: float | None) -> float | None:
     return 0.8 * iptm + 0.2 * ptm
 
 
-def summary_confidences_from_item(
+def basic_confidences_from_item(
     item: Any,
     *,
     chain_records: list[dict[str, Any]],
@@ -239,7 +238,7 @@ def confidences_from_item(
     chain_records: list[dict[str, Any]],
     metadata: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    payload = summary_confidences_from_item(
+    payload = basic_confidences_from_item(
         item,
         chain_records=chain_records,
         metadata=metadata,
@@ -288,7 +287,7 @@ def result_records_from_items(
     *,
     output: str,
     output_paths: list[str | Path] | None = None,
-    sidecar_paths: list[tuple[str | Path, str | Path, str | Path]] | None = None,
+    sidecar_paths: list[tuple[str | Path, str | Path]] | None = None,
     chain_records: list[dict[str, Any]],
     complex_id: str,
     include_plddt: bool = False,
@@ -313,8 +312,8 @@ def result_records_from_items(
         if len(sidecar_paths) != len(results):
             raise ValueError("sidecar_paths length must match the number of prediction results")
         sidecars = [
-            (Path(summary_path), Path(confidences_path), Path(full_metrics_path))
-            for summary_path, confidences_path, full_metrics_path in sidecar_paths
+            (Path(confidences_path), Path(full_metrics_path))
+            for confidences_path, full_metrics_path in sidecar_paths
         ]
     else:
         sidecars = [_sidecar_paths(path) for path in paths]
@@ -325,8 +324,8 @@ def result_records_from_items(
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as handle:
             handle.write(item.complex.to_mmcif())
-        summary_path, confidences_path, full_metrics_path = sidecars[index]
-        summary_confidences = summary_confidences_from_item(
+        confidences_path, full_metrics_path = sidecars[index]
+        basic_confidences = basic_confidences_from_item(
             item,
             chain_records=chain_records,
             metadata=metadata,
@@ -337,7 +336,6 @@ def result_records_from_items(
             chain_records=chain_records,
             metadata=metadata,
         )
-        _write_json(summary_path, summary_confidences)
         _write_json(confidences_path, confidences)
         if full_metrics:
             with open(full_metrics_path, "wb") as handle:
@@ -354,18 +352,17 @@ def result_records_from_items(
             "complex_id": complex_id,
             "sample_index": index + 1,
             "output": str(path),
-            "summary_confidences_json": str(summary_path),
             "confidences_json": str(confidences_path),
             "chains": chain_records,
-            "metrics": summary_confidences,
+            "metrics": basic_confidences,
         }
         if metadata:
             record["metadata"] = metadata
         if full_metrics:
             record["full_metrics_pickle"] = str(full_metrics_path)
         print(
-            f"{path}: pLDDT mean={summary_confidences['plddt_mean']:.3f}, "
-            f"pTM={summary_confidences['ptm']:.3f}, ipTM={summary_confidences['iptm']:.3f}",
+            f"{path}: pLDDT mean={basic_confidences['plddt_mean']:.3f}, "
+            f"pTM={basic_confidences['ptm']:.3f}, ipTM={basic_confidences['iptm']:.3f}",
             flush=True,
         )
         records.append(record)
