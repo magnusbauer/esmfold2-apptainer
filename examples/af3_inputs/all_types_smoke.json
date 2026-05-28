@@ -1,0 +1,38 @@
+{
+  "name": "all_types_smoke",
+  "modelSeeds": [0],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "ACDEFGHIK"
+      }
+    },
+    {
+      "dna": {
+        "id": "B",
+        "sequence": "GATC"
+      }
+    },
+    {
+      "rna": {
+        "id": "C",
+        "sequence": "AUGC"
+      }
+    },
+    {
+      "ligand": {
+        "id": "D",
+        "ccdCodes": ["ATP"]
+      }
+    },
+    {
+      "ligand": {
+        "id": "E",
+        "smiles": "CCO"
+      }
+    }
+  ],
+  "dialect": "alphafold3",
+  "version": 4
+}

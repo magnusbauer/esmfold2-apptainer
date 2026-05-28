@@ -1,0 +1,44 @@
+{
+  "name": "hf_hhai_1mht",
+  "modelSeeds": [0],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MIEIKDKQLTGLRFIDLFAGLGGFRLALESCGAECVYSNEWDKYAQEVYEMNFGEKPEGDITQVNEKTIPDHDILCAGFPCQAFSISGKQKGFEDSRGTLFFDIARIVREKKPKVVFMENVKNFASHDNGNTLEVVKNTMNELDYSFHAKVLNALDYGIPQKRERIYMICFRNDLNIQNFQFPKPFELNTFVKDLLLPDSEVEHLVIDRKDLVMTNQEIEQTTPKTVRLGIVGKGGQGERIYSTRGIAITLSAYGGGIFAKTGGYLVNGKTRKLHPRECARVMGYPDSYKVHPSTSQAYKQFGNSVVINVLQYIAYNIGSSLNFKPY"
+      }
+    },
+    {
+      "dna": {
+        "id": "B",
+        "sequence": "GATAGCGCTATC",
+        "modifications": [
+          {
+            "modificationType": "C36",
+            "basePosition": 6
+          }
+        ]
+      }
+    },
+    {
+      "dna": {
+        "id": "C",
+        "sequence": "TGATAGCGCTATC",
+        "modifications": [
+          {
+            "modificationType": "C36",
+            "basePosition": 7
+          }
+        ]
+      }
+    },
+    {
+      "ligand": {
+        "id": "L",
+        "ccdCodes": ["SAH"]
+      }
+    }
+  ],
+  "dialect": "alphafold3",
+  "version": 4
+}

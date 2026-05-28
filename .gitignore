@@ -1,0 +1,25 @@
+# Built Apptainer images and local model snapshots
+*.sif
+models/
+
+# Generated validation and benchmark outputs
+1mht_pred.cif
+examples/gpu_test_outputs/
+examples/run_outputs/
+*_pred.cif
+*_metrics.json
+*_confidences.json
+*_summary_confidences.json
+*_full_metrics.pkl
+
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local editor and OS noise
+.DS_Store
+*.swp
+*.swo

@@ -1,0 +1,321 @@
+Bootstrap: docker
+From: nvidia/cuda:12.6.3-base-ubuntu24.04
+
+IncludeCmd: yes
+
+%labels
+    Author magnusb
+    Description "ESMFold2 local GPU runtime with pixi-managed Python 3.12"
+    ESMPackage "git+https://github.com/Biohub/esm.git@c94ed8d"
+    PyTorch "2.9.1+cu128"
+    ESMFold2Revision "e1e189d0f5fb70c2693da2332eca4443c0ccccd6"
+    ESMC6BRevision "89c554c46a44d825fbfbe3ce2a6bdc539770bdaa"
+
+%files
+    /etc/localtime
+    examples/_esmfold2_common.py /opt/esmfold2/examples/_esmfold2_common.py
+    examples/_esmfold2_inputs.py /opt/esmfold2/examples/_esmfold2_inputs.py
+    examples/esmfold2_predict.py /opt/esmfold2/examples/esmfold2_predict.py
+    examples/predict_hf_hhai_1mht.py /opt/esmfold2/examples/predict_hf_hhai_1mht.py
+    examples/run_gpu_arch_tests.sh /opt/esmfold2/examples/run_gpu_arch_tests.sh
+    examples/README.md /opt/esmfold2/examples/README.md
+    examples/af3_inputs /opt/esmfold2/examples/af3_inputs
+
+%post
+    set -eux
+
+    export DEBIAN_FRONTEND=noninteractive
+    export PIXI_VERSION=0.63.2
+    export ESMFOLD2_REVISION=e1e189d0f5fb70c2693da2332eca4443c0ccccd6
+    export ESMC6B_REVISION=89c554c46a44d825fbfbe3ce2a6bdc539770bdaa
+    export HF_HOME=/opt/esmfold2/hf_home
+    export HF_HUB_DISABLE_TELEMETRY=1
+    export PIP_NO_CACHE_DIR=1
+    export PIXI_NO_PROGRESS=true
+
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        bash \
+        build-essential \
+        ca-certificates \
+        cmake \
+        curl \
+        git \
+        libgl1 \
+        libglib2.0-0 \
+        libgomp1 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+        pkg-config \
+        wget
+    rm -rf /var/lib/apt/lists/*
+
+    cd /tmp
+    curl -fsSLO "https://github.com/prefix-dev/pixi/releases/download/v${PIXI_VERSION}/pixi-x86_64-unknown-linux-musl.tar.gz"
+    curl -fsSLO "https://github.com/prefix-dev/pixi/releases/download/v${PIXI_VERSION}/pixi-x86_64-unknown-linux-musl.tar.gz.sha256"
+    sha256sum -c pixi-x86_64-unknown-linux-musl.tar.gz.sha256
+    tar -xzf pixi-x86_64-unknown-linux-musl.tar.gz -C /usr/local/bin pixi
+    chmod +x /usr/local/bin/pixi
+
+    mkdir -p /opt/esmfold2/bin /opt/esmfold2/models /opt/esmfold2/examples "$HF_HOME"
+    cat >/opt/esmfold2/pixi.toml <<'EOF'
+[workspace]
+name = "esmfold2"
+version = "0.1.0"
+description = "ESMFold2 runtime"
+authors = ["Biohub ESMFold2 container user"]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.12.*"
+pip = "*"
+EOF
+
+    pixi install --manifest-path /opt/esmfold2/pixi.toml
+
+    /opt/esmfold2/.pixi/envs/default/bin/python -m pip install --upgrade pip
+    /opt/esmfold2/.pixi/envs/default/bin/python -m pip install \
+        --index-url https://download.pytorch.org/whl/cu128 \
+        torch==2.9.1
+    /opt/esmfold2/.pixi/envs/default/bin/python -m pip install \
+        "esm @ git+https://github.com/Biohub/esm.git@c94ed8d"
+    /opt/esmfold2/.pixi/envs/default/bin/python -m pip install \
+        "atomworks==2.2.0"
+    /opt/esmfold2/.pixi/envs/default/bin/python -m pip install \
+        "rdkit==2026.3.2"
+
+    /opt/esmfold2/.pixi/envs/default/bin/python - <<'PY'
+import json
+import os
+
+from huggingface_hub import snapshot_download
+
+models = [
+    (
+        "biohub/ESMC-6B",
+        os.environ["ESMC6B_REVISION"],
+        "/opt/esmfold2/models/ESMC-6B",
+    ),
+    (
+        "biohub/ESMFold2",
+        os.environ["ESMFOLD2_REVISION"],
+        "/opt/esmfold2/models/ESMFold2",
+    ),
+]
+
+for repo_id, revision, local_dir in models:
+    snapshot_download(
+        repo_id=repo_id,
+        revision=revision,
+        local_dir=local_dir,
+    )
+
+config_path = "/opt/esmfold2/models/ESMFold2/config.json"
+with open(config_path) as handle:
+    config = json.load(handle)
+config["esmc_id"] = "/opt/esmfold2/models/ESMC-6B"
+with open(config_path, "w") as handle:
+    json.dump(config, handle, indent=2)
+    handle.write("\n")
+PY
+
+    cat >/opt/esmfold2/env.sh <<'EOF'
+export ESMFOLD2_ROOT=${ESMFOLD2_ROOT:-/opt/esmfold2}
+export ESMFOLD2_MODEL_PATH=${ESMFOLD2_MODEL_PATH:-/opt/esmfold2/models/ESMFold2}
+export ESMC_MODEL_PATH=${ESMC_MODEL_PATH:-/opt/esmfold2/models/ESMC-6B}
+export ESMFOLD2_CCD_PATH=${ESMFOLD2_CCD_PATH:-/opt/esmfold2/models/ESMFold2/ccd.pkl}
+export ESMCFOLD_CCD_PATH=${ESMCFOLD_CCD_PATH:-$ESMFOLD2_CCD_PATH}
+export CCD_MIRROR_PATH=${CCD_MIRROR_PATH:-/tmp}
+export PDB_MIRROR_PATH=${PDB_MIRROR_PATH:-/tmp}
+export HF_HOME=${HF_HOME:-/tmp/esmfold2_hf_home}
+export HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+export PYTHONNOUSERSITE=${PYTHONNOUSERSITE:-1}
+export CUDA_HOME=${CUDA_HOME:-/usr/local/cuda}
+export PATH=/usr/local/cuda/bin:/opt/esmfold2/.pixi/envs/default/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}
+mkdir -p "$HF_HOME" 2>/dev/null || true
+EOF
+
+    cat >/usr/local/bin/esmfold2_python <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source /opt/esmfold2/env.sh
+exec /opt/esmfold2/.pixi/envs/default/bin/python "$@"
+EOF
+    chmod +x /usr/local/bin/esmfold2_python
+
+    cat >/usr/local/bin/esmfold2_validate_full <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source /opt/esmfold2/env.sh
+exec /opt/esmfold2/.pixi/envs/default/bin/python /opt/esmfold2/examples/esmfold2_predict.py \
+  --input /opt/esmfold2/examples/af3_inputs/hf_hhai_1mht.json "$@"
+EOF
+    chmod +x /usr/local/bin/esmfold2_validate_full
+
+    cat >/usr/local/bin/esmfold2_predict <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source /opt/esmfold2/env.sh
+exec /opt/esmfold2/.pixi/envs/default/bin/python /opt/esmfold2/examples/esmfold2_predict.py "$@"
+EOF
+    chmod +x /usr/local/bin/esmfold2_predict
+
+    cat >/opt/esmfold2/bin/validate_full.py <<'PY'
+#!/usr/bin/env python
+import argparse
+import os
+
+import torch
+from esm.models.esmfold2 import (
+    DNAInput,
+    ESMFold2InputBuilder,
+    LigandInput,
+    Modification,
+    ProteinInput,
+    StructurePredictionInput,
+)
+from transformers.models.esmfold2.modeling_esmfold2 import ESMFold2Model
+
+HHAI_SEQ = (
+    "MIEIKDKQLTGLRFIDLFAGLGGFRLALESCGAECVYSNEWDKYAQEVYEMNFGEKPEGDITQVNEKTIPDH"
+    "DILCAGFPCQAFSISGKQKGFEDSRGTLFFDIARIVREKKPKVVFMENVKNFASHDNGNTLEVVKNTMNELD"
+    "YSFHAKVLNALDYGIPQKRERIYMICFRNDLNIQNFQFPKPFELNTFVKDLLLPDSEVEHLVIDRKDLVMTN"
+    "QEIEQTTPKTVRLGIVGKGGQGERIYSTRGIAITLSAYGGGIFAKTGGYLVNGKTRKLHPRECARVMGYPDS"
+    "YKVHPSTSQAYKQFGNSVVINVLQYIAYNIGSSLNFKPY"
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the full ESMFold2 guide example.")
+    parser.add_argument(
+        "--model",
+        default=os.environ.get("ESMFOLD2_MODEL_PATH", "/opt/esmfold2/models/ESMFold2"),
+        help="Model id or local model directory. Defaults to the baked-in ESMFold2 path.",
+    )
+    parser.add_argument("--output", default="1mht_pred.cif", help="Output mmCIF path.")
+    parser.add_argument(
+        "--ccd-cache",
+        default=os.environ.get("ESMFOLD2_CCD_CACHE", "/opt/esmfold2/models/ESMFold2"),
+        help="Directory containing ccd.pkl.",
+    )
+    parser.add_argument("--num-loops", type=int, default=3)
+    parser.add_argument(
+        "--num-sampling-steps",
+        "--num-diffusion-steps",
+        dest="num_sampling_steps",
+        type=int,
+        default=200,
+    )
+    parser.add_argument("--num-diffusion-samples", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--esmc-precision",
+        default="bf16",
+        choices=["bf16", "fp32", "fp8"],
+        help="Precision for the ESMC language model. fp8 requires supported hardware.",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available. Run the container with apptainer exec --nv.")
+
+    model = (
+        ESMFold2Model.from_pretrained(
+            args.model,
+            esmc_precision=args.esmc_precision,
+            local_files_only=os.path.isdir(args.model),
+        )
+        .cuda()
+        .eval()
+    )
+
+    spi = StructurePredictionInput(
+        sequences=[
+            ProteinInput(id="A", sequence=HHAI_SEQ),
+            DNAInput(
+                id="B",
+                sequence="GATAGCGCTATC",
+                modifications=[Modification(position=5, ccd="C36")],
+            ),
+            DNAInput(
+                id="C",
+                sequence="TGATAGCGCTATC",
+                modifications=[Modification(position=6, ccd="C36")],
+            ),
+            LigandInput(id="L", ccd=["SAH"]),
+        ]
+    )
+    result = ESMFold2InputBuilder(ccd_cache=args.ccd_cache).fold(
+        model,
+        spi,
+        num_loops=args.num_loops,
+        num_sampling_steps=args.num_sampling_steps,
+        num_diffusion_samples=args.num_diffusion_samples,
+        seed=args.seed,
+    )
+
+    print(
+        f"pLDDT mean: {float(result.plddt.mean()):.3f}, "
+        f"pTM: {float(result.ptm):.3f}, "
+        f"ipTM: {float(result.iptm):.3f}"
+    )
+    with open(args.output, "w") as handle:
+        handle.write(result.complex.to_mmcif())
+    print(f"Wrote {args.output}")
+
+
+if __name__ == "__main__":
+    main()
+PY
+    chmod +x /opt/esmfold2/bin/validate_full.py
+
+    /opt/esmfold2/.pixi/envs/default/bin/python -m pip cache purge || true
+    pixi clean cache --yes || true
+    rm -rf /root/.cache/pip /root/.cache/pixi /root/.cache/rattler /root/.cache/uv
+
+%environment
+    export ESMFOLD2_ROOT=/opt/esmfold2
+    export ESMFOLD2_MODEL_PATH=/opt/esmfold2/models/ESMFold2
+    export ESMC_MODEL_PATH=/opt/esmfold2/models/ESMC-6B
+    export ESMFOLD2_CCD_PATH=/opt/esmfold2/models/ESMFold2/ccd.pkl
+    export ESMCFOLD_CCD_PATH=/opt/esmfold2/models/ESMFold2/ccd.pkl
+    export CCD_MIRROR_PATH=/tmp
+    export PDB_MIRROR_PATH=/tmp
+    export HF_HOME=/tmp/esmfold2_hf_home
+    export HF_HUB_DISABLE_TELEMETRY=1
+    export PYTHONNOUSERSITE=1
+    export CUDA_HOME=/usr/local/cuda
+    export PATH=/usr/local/cuda/bin:/opt/esmfold2/.pixi/envs/default/bin:/usr/local/bin:/usr/bin:/bin:$PATH
+    export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+%test
+    /opt/esmfold2/.pixi/envs/default/bin/python - <<'PY'
+import esm
+import torch
+
+print("esm import ok")
+print("torch", torch.__version__)
+PY
+
+%runscript
+    exec esmfold2_python "$@"
+
+%help
+    ESMFold2 Apptainer image with pixi-managed Python 3.12, PyTorch 2.9.1+cu128,
+    Biohub esm pinned
+    to c94ed8d, and local ESMFold2 + ESMC-6B weights baked into /opt/esmfold2.
+
+    Build:
+      APPTAINER_TMPDIR=/tmp apptainer build --force esmfold2.sif esmfold2.def
+
+    Import check:
+      apptainer exec --nv esmfold2.sif esmfold2_python -c "import torch; print(torch.cuda.is_available())"
+
+    Full guide validation:
+      apptainer exec --nv esmfold2.sif esmfold2_validate_full --output 1mht_pred.cif
