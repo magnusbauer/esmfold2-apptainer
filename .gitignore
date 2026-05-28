@@ -2,15 +2,27 @@
 *.sif
 models/
 
-# Generated validation and benchmark outputs
+# Generated validation outputs
 1mht_pred.cif
-examples/gpu_test_outputs/
+outputs/
 examples/run_outputs/
 *_pred.cif
 *_metrics.json
 *_confidences.json
 *_summary_confidences.json
 *_full_metrics.pkl
+
+# Local credentials and environment overrides
+.env
+.env.*
+.netrc
+.hf_token
+hf_token
+*.hf_token
+token
+stored_tokens
+credentials
+credentials.json
 
 # Python/runtime caches
 __pycache__/
