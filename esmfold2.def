@@ -1,5 +1,5 @@
 Bootstrap: docker
-From: nvidia/cuda:12.6.3-base-ubuntu24.04
+From: nvidia/cuda:12.8.1-devel-ubuntu24.04
 
 IncludeCmd: yes
 
@@ -8,6 +8,9 @@ IncludeCmd: yes
     Description "ESMFold2 local GPU runtime with pixi-managed Python 3.12"
     ESMPackage "git+https://github.com/Biohub/esm.git@c94ed8d"
     PyTorch "2.9.1+cu128"
+    xFormers "0.0.33.post2"
+    TransformerEngine "2.15.0"
+    FlashAttention "2.8.3"
     ESMFold2Revision "e1e189d0f5fb70c2693da2332eca4443c0ccccd6"
     ESMC6BRevision "89c554c46a44d825fbfbe3ce2a6bdc539770bdaa"
 
@@ -28,10 +31,16 @@ IncludeCmd: yes
     export PIXI_VERSION=0.63.2
     export ESMFOLD2_REVISION=e1e189d0f5fb70c2693da2332eca4443c0ccccd6
     export ESMC6B_REVISION=89c554c46a44d825fbfbe3ce2a6bdc539770bdaa
+    export XFORMERS_VERSION=0.0.33.post2
+    export TRANSFORMER_ENGINE_VERSION=2.15.0
+    export FLASH_ATTN_VERSION=2.8.3
     export HF_HOME=/opt/esmfold2/hf_home
     export HF_HUB_DISABLE_TELEMETRY=1
     export PIP_NO_CACHE_DIR=1
     export PIXI_NO_PROGRESS=true
+    export MAX_JOBS="${MAX_JOBS:-4}"
+    export NVCC_THREADS="${NVCC_THREADS:-2}"
+    export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.0;8.6;8.9;9.0;12.0}"
 
     apt-get update
     apt-get install -y --no-install-recommends \
@@ -44,9 +53,13 @@ IncludeCmd: yes
         libgl1 \
         libglib2.0-0 \
         libgomp1 \
+        libcudnn9-cuda-12=9.10.2.21-1 \
+        libcudnn9-headers-cuda-12=9.10.2.21-1 \
+        libcudnn9-dev-cuda-12=9.10.2.21-1 \
         libsm6 \
         libxext6 \
         libxrender1 \
+        ninja-build \
         pkg-config \
         wget
     rm -rf /var/lib/apt/lists/*
@@ -80,11 +93,49 @@ EOF
         --index-url https://download.pytorch.org/whl/cu128 \
         torch==2.9.1
     /opt/esmfold2/.pixi/envs/default/bin/python -m pip install \
+        --no-deps \
+        "xformers==${XFORMERS_VERSION}"
+    /opt/esmfold2/.pixi/envs/default/bin/python -m pip install \
+        --no-build-isolation \
+        "transformer-engine[pytorch]==${TRANSFORMER_ENGINE_VERSION}"
+    /opt/esmfold2/.pixi/envs/default/bin/python -m pip install \
+        --no-build-isolation \
+        "flash-attn==${FLASH_ATTN_VERSION}"
+    /opt/esmfold2/.pixi/envs/default/bin/python -m pip install \
         "esm @ git+https://github.com/Biohub/esm.git@c94ed8d"
     /opt/esmfold2/.pixi/envs/default/bin/python -m pip install \
         "atomworks==2.2.0"
     /opt/esmfold2/.pixi/envs/default/bin/python -m pip install \
         "rdkit==2026.3.2"
+
+    /opt/esmfold2/.pixi/envs/default/bin/python - <<'PY'
+from pathlib import Path
+
+import transformers.models.esmc.modeling_esmc as modeling_esmc
+
+path = Path(modeling_esmc.__file__)
+text = path.read_text()
+replacements = {
+    "class ESMCForSequenceClassification(ESMCPreTrainedModel):": False,
+    "class ESMCForTokenClassification(ESMCPreTrainedModel):": False,
+}
+lines = text.splitlines()
+active_class = None
+for index, line in enumerate(lines):
+    if line.startswith("class "):
+        active_class = line.split(":", 1)[0] + ":"
+    if active_class in replacements and line.strip() == "@auto_docstring":
+        indent = line[: len(line) - len(line.lstrip())]
+        lines[index] = f'{indent}@auto_docstring(checkpoint="biohub/ESMC-6B")'
+        replacements[active_class] = True
+        active_class = None
+
+missing = [name for name, patched in replacements.items() if not patched]
+if missing:
+    raise RuntimeError(f"Did not patch auto_docstring checkpoint for: {missing}")
+path.write_text("\n".join(lines) + "\n")
+print(f"Patched ESMC auto_docstring checkpoints in {path}")
+PY
 
     /opt/esmfold2/.pixi/envs/default/bin/python - <<'PY'
 import json
@@ -297,10 +348,16 @@ PY
 %test
     /opt/esmfold2/.pixi/envs/default/bin/python - <<'PY'
 import esm
+import flash_attn
 import torch
+import transformer_engine.pytorch
+import xformers
 
 print("esm import ok")
 print("torch", torch.__version__)
+print("xformers", xformers.__version__)
+print("flash_attn", flash_attn.__version__)
+print("transformer_engine ok")
 PY
 
 %runscript
@@ -308,8 +365,8 @@ PY
 
 %help
     ESMFold2 Apptainer image with pixi-managed Python 3.12, PyTorch 2.9.1+cu128,
-    Biohub esm pinned
-    to c94ed8d, and local ESMFold2 + ESMC-6B weights baked into /opt/esmfold2.
+    xformers, Transformer Engine, FlashAttention, Biohub esm pinned to c94ed8d,
+    and local ESMFold2 + ESMC-6B weights baked into /opt/esmfold2.
 
     Build:
       APPTAINER_TMPDIR=/tmp apptainer build --force esmfold2.sif esmfold2.def

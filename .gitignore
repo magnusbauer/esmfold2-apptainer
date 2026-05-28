@@ -6,11 +6,13 @@ models/
 1mht_pred.cif
 examples/gpu_test_outputs/
 examples/run_outputs/
+test_outputs/
 *_pred.cif
 *_metrics.json
 *_confidences.json
 *_summary_confidences.json
 *_full_metrics.pkl
+build_*.log
 
 # Python/runtime caches
 __pycache__/
