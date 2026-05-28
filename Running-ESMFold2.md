@@ -97,6 +97,12 @@ For a complete example, see:
 /net/scratch/magnusb/git/ESMFold2/examples/af3_inputs/hf_hhai_1mht.json
 ```
 
+Important ligand note: the runner uses the ligand representation provided in the
+input JSON. If a ligand is specified with `ccdCodes`, that CCD entry is passed
+through as the ligand input. The runner does not convert CCD ligands to SMILES
+or reinterpret the ligand identity for you, so make sure `ccdCodes` or `smiles`
+is the representation you actually want to predict with.
+
 ## Check Inputs Without Running the Model
 
 Use `--list-inputs` to validate parsing and show the chains and seeds without
