@@ -4,6 +4,7 @@ models/
 
 # Generated validation and benchmark outputs
 1mht_pred.cif
+outputs/
 examples/gpu_test_outputs/
 examples/run_outputs/
 test_outputs/
@@ -13,13 +14,6 @@ test_outputs/
 *_summary_confidences.json
 *_full_metrics.pkl
 build_*.log
-
-# Python/runtime caches
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
 
 # Local credentials and environment overrides
 .env
@@ -32,6 +26,13 @@ token
 stored_tokens
 credentials
 credentials.json
+
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Local editor and OS noise
 .DS_Store

@@ -367,12 +367,17 @@ PY
     exec esmfold2_python "$@"
 
 %help
-    ESMFold2 Apptainer image with pixi-managed Python 3.12, PyTorch 2.9.1+cu128,
-    xformers, Transformer Engine, FlashAttention, Biohub esm pinned to c94ed8d,
-    and local ESMFold2 + ESMC-6B weights baked into /opt/esmfold2.
+    Apptainer image packaging Biohub ESMFold2 with pixi-managed Python 3.12,
+    PyTorch 2.9.1+cu128, xFormers, Transformer Engine, FlashAttention, Biohub
+    esm pinned to c94ed8d, and ESMFold2 + ESMC-6B model snapshots baked into
+    /opt/esmfold2.
+
+    Upstream ESMFold2, ESMC-6B, and esm are developed by Biohub. This image is
+    only a runtime packaging layer. See /opt/esmfold2/ATTRIBUTION.md for
+    upstream links and citation guidance.
 
     Build:
-      APPTAINER_TMPDIR=/tmp apptainer build --force esmfold2.sif esmfold2.def
+      apptainer build --force esmfold2.sif esmfold2.def
 
     Import check:
       apptainer exec --nv esmfold2.sif esmfold2_python -c "import torch; print(torch.cuda.is_available())"
